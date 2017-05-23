@@ -1,7 +1,9 @@
 #include <assert.h>
 #include <stdio.h>
 #include <queue>
+#include <sstream>
 #include <string.h>
+#include <string>
 #include <stdlib.h>
 #include <openssl/bn.h>
 #include <openssl/sha.h>
@@ -13,7 +15,7 @@
 
 // #define ANALYSIS_DB "./db/"
 #define FP_SIZE 6
-#define FP_SIZE2 6
+#define FP_SIZE2 16
 #define K_MINHASH 1
 #define SEG_SIZE ((2<<20)) //1MB default
 #define SEG_MIN ((2<<19)) //512KB
@@ -26,57 +28,48 @@ struct node{
 	uint64_t size;
 };
 
-struct seg{
+/*struct seg{
        char key[FP_SIZE2];
        uint64_t size;
-};
+};*/
 
-leveldb::DB *relate;
+leveldb::DB *db;
 queue<node> sq;
-vector<seg> sq2;
-char segm[FP_SIZE*256];
+//vector<seg> sq2;
+string s;
 void init_relate(char *rel){
       leveldb::Options options;
       options.create_if_missing = true;
-      leveldb::Status status = leveldb::DB::Open(options, rel, &relate);
+      leveldb::Status status = leveldb::DB::Open(options, rel, &db);
       assert(status.ok());
-        assert(relate != NULL);
+        assert(db != NULL);
 }
-uint64_t sq_size = 0;
 
-/*void process_seg()
-{
-        char ft[FP_SIZE*2];
-        char ret[FP_SIZE];
-        while(!sq.empty()){
-                node now = sq.front();
-                memcpy(ft, now.key, FP_SIZE);
-                MD5((unsigned char*)ft, FP_SIZE*2, md5full);
-                memcpy(ret, md5full, FP_SIZE);
 
-                leveldb::Status cst;
-                leveldb::Slice key(ret, FP_SIZE);
-                leveldb::Slice pkey(core.key, FP_SIZE);
-                cst = relate->Put(leveldb::WriteOptions(), key, pkey);
-                int j;
-                printf("%.2hhx", ret[0]);
-                for(j = 1; j < FP_SIZE; j++)
-                        printf(":%.2hhx", ret[j]);
+uint64_t key_num=0;
 
-                printf("\t\t%" PRIu64 " ", now.size);
-                printf("\t\t\t10\n");
 
-                sq.pop();
-        }
-}*/
-void process_seg()   //duplication
-{
-    MD5((unsigned char*)segm, FP_SIZE2,seg.hash)
-    vector<seg> ::iterator it;
-    for(it=sq2.begin();it!=sq2.end;it++){
-        if(*seg.hash!=hash){
-            sq2.push_back(seg);
-        }
+void process_seg(int size)   //duplication
+{  
+    char hash2[FP_SIZE2];
+    unsigned char md5full[FP_SIZE2*4];
+    //const char *p=s.c_str();
+   /*char hash3[FP_SIZE*4000];
+    for(int i=0;i<=s.length();i++){
+        hash3[i]=s[i];
+    }*/
+    MD5((unsigned char*)s.c_str(), s.length(),md5full);
+    memcpy(hash2,md5full,FP_SIZE2);
+    /* for(int i=0;i<FP_SIZE2;i++){
+   	printf(":%.2hhx", md5full[i]);
+    }
+    printf("\t%d\n",size);*/
+	string key(hash2, FP_SIZE2);
+	string exs="";
+    leveldb::Status statu = db->Get(leveldb::ReadOptions(),key,&exs);
+    if(statu.ok()==0){
+        statu=db->Put(leveldb::WriteOptions(),key,s);
+            key_num++;
     }
 }
 
@@ -86,6 +79,7 @@ void read_hashes(FILE *fp) {
 	char *item;
 	char last[FP_SIZE];
 	memset(last, 0, FP_SIZE);// make all elements in last as 0
+        uint64_t sq_size=0;
 
 	while (fgets(read_buffer, 256, fp)) {
 		// skip title line
@@ -105,17 +99,19 @@ void read_hashes(FILE *fp) {
 			hash[idx++] = strtol(item, NULL, 16);
 			item = strtok(NULL, ":\t\n");
 		}
-
+                string s1(hash, FP_SIZE);
 		uint64_t size = atoi((const char*)item);   //string-->int
-                strcat(segm,(const char*)hash);         //get the segment
-
+                //uint64_t size=strlen(item);
+                         //get the segment
+                //s1.assign(hash, hash+FP_SIZE);
+                s=s+s1;
 
 		if (sq_size + size > SEG_MAX || (sq_size >= SEG_MIN && (hash[5] << 2) >> 2 == 0x3f)){
-			seg.size=sq_size+size;
-                        process_seg();
+			//seg.size=sq_size+size;
+                        process_seg(sq_size);
 			//while(!pq.empty()) pq.pop();
 			while(!sq.empty()) sq.pop();
-                        memset(segm,0,FP_SIZE_256);
+                        s="";                 //clear string
 			sq_size = 0;
 		}
 
@@ -124,26 +120,17 @@ void read_hashes(FILE *fp) {
 		entry.size = size;
 		sq_size += size;
 		sq.push(entry);
-		/*if (pq.size() < K_MINHASH){
-			pq.push(entry);
-		}else{
-			node max = pq.top();
-			if(memcmp(max.key, entry.key, FP_SIZE) > 0){
-				pq.pop();
-				pq.push(entry);
-			}
-		}*/
+		
 	}
 }
 
 int main (int argc, char *argv[]){
-	srand((unsigned)time(NULL));
 	assert(argc >= 2);  //assert=if ... end procedure
 	// argv[1] points to hash file; argv[2] points to analysis db  
 	FILE *fp = NULL;
 	fp = fopen(argv[1], "r");
 	assert(fp != NULL);
-	init_relate("./relate-db/");
+	init_relate("./count_key1-db/");
 	read_hashes(fp);
 	fclose(fp);
 	return 0;
